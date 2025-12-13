@@ -1,0 +1,5 @@
+{
+  "name": "Domain Keeper",
+  "description": "A modern, lightweight domain management tool using Cloudinary as a JSON database. Features bulk import, deduplication, and real-time syncing.",
+  "requestFramePermissions": []
+}
