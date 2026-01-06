@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Cloud, Check, AlertCircle } from 'lucide-react';
+import { Cloud, Check, AlertCircle, Database } from 'lucide-react';
 import { Domain, Toast } from './types';
 import { normalizeDomain, generateId } from './utils';
-import { fetchDomains, saveDomains } from './services/cloudinaryService';
+import { fetchDomains, saveDomains } from './src/services/mongoService';
 
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -21,17 +21,16 @@ function App() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   
-  // Dashboard Analysis State
   const [analysis, setAnalysis] = useState<AnalysisResult>({ unique: [], duplicates: [] });
 
-  // Initial Fetch
+  // Initial Data Load
   useEffect(() => {
     const loadData = async () => {
       try {
         const data = await fetchDomains();
         setDomains(data);
       } catch (err) {
-        showToast('Failed to load domains from cloud', 'error');
+        showToast('Could not connect to Server', 'error');
       } finally {
         setLoading(false);
       }
@@ -44,6 +43,8 @@ function App() {
     setToast({ id, message, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  // --- Core Logic ---
 
   const handleAnalyze = useCallback((rawInput: string) => {
     const lines = rawInput.split('\n');
@@ -102,15 +103,12 @@ function App() {
       id: generateId(),
       url,
       createdAt: new Date().toISOString(),
-      status: 'pending' // Default status
+      status: 'pending'
     }));
 
     setDomains(prev => [...newDomains, ...prev]);
     setHasUnsavedChanges(true);
-    
-    showToast(`Appended ${analysis.unique.length} new domains`, 'success');
-    
-    // Reset analysis after append
+    showToast(`Added ${analysis.unique.length} domains`, 'success');
     setAnalysis({ unique: [], duplicates: [] });
   };
 
@@ -122,23 +120,45 @@ function App() {
   const handleUpdateDomain = useCallback((id: string, newUrl: string) => {
     setDomains(prev => prev.map(d => d.id === id ? { ...d, url: newUrl } : d));
     setHasUnsavedChanges(true);
-    showToast('Domain updated', 'success');
   }, []);
 
+  // --- AUTO-SAVE ON STATUS CHANGE ---
+  // This function is passed down to the table. When "Copy" is clicked, 
+  // status becomes 'copied', triggering an immediate DB sync.
   const handleDomainStatusChange = useCallback((id: string, status: 'pending' | 'copied') => {
-    setDomains(prev => prev.map(d => d.id === id ? { ...d, status } : d));
-    setHasUnsavedChanges(true);
+    setDomains(prev => {
+      const updatedDomains = prev.map(d => d.id === id ? { ...d, status } : d);
+      
+      const autoSave = async () => {
+        setSyncing(true);
+        try {
+          await saveDomains(updatedDomains);
+          setHasUnsavedChanges(false);
+          // showToast('Status saved', 'success'); // Optional feedback
+        } catch (error) {
+          console.error('Auto-save error', error);
+          showToast('Failed to save status', 'error');
+          setHasUnsavedChanges(true);
+        } finally {
+          setSyncing(false);
+        }
+      };
+      
+      autoSave();
+      return updatedDomains;
+    });
   }, []);
 
+  // Manual Sync Button Handler
   const handleSync = async () => {
     setSyncing(true);
     try {
       await saveDomains(domains);
       setHasUnsavedChanges(false);
-      showToast('Successfully synced to Cloudinary', 'success');
+      showToast('Database synced successfully', 'success');
     } catch (error) {
       console.error(error);
-      showToast('Failed to sync. Check console.', 'error');
+      showToast('Sync failed', 'error');
     } finally {
       setSyncing(false);
     }
@@ -148,7 +168,7 @@ function App() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="animate-spin text-slate-800">
-          <Cloud className="w-8 h-8" />
+          <Database className="w-8 h-8" />
         </div>
       </div>
     );
@@ -157,14 +177,11 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex">
-        {/* Sidebar Navigation */}
         <Sidebar />
-
-        {/* Main Content Area */}
         <div className="flex-1 ml-64 p-8">
           <div className="max-w-[1600px] mx-auto space-y-6">
             
-            {/* Global Header/Sync Action */}
+            {/* Header / Sync Status */}
             <div className="flex items-center justify-end mb-4">
                <button
                 onClick={handleSync}
@@ -173,15 +190,11 @@ function App() {
                   flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-all shadow-sm
                   ${syncing || !hasUnsavedChanges 
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'}
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'}
                 `}
               >
-                {syncing ? (
-                  <Check className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Cloud className="w-4 h-4" />
-                )}
-                {syncing ? 'Syncing...' : hasUnsavedChanges ? 'Save Changes' : 'Synced'}
+                {syncing ? <Check className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                {syncing ? 'Saving...' : hasUnsavedChanges ? 'Save Changes' : 'Saved to DB'}
               </button>
             </div>
 
@@ -210,7 +223,7 @@ function App() {
           </div>
         </div>
 
-        {/* Toast Notification */}
+        {/* Toast */}
         {toast && (
           <div className={`
             fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-lg border flex items-center gap-3 animate-fade-in-up z-[60] bg-white
@@ -220,7 +233,7 @@ function App() {
           `}>
             {toast.type === 'success' && <Check className="w-5 h-5 text-green-500" />}
             {toast.type === 'error' && <AlertCircle className="w-5 h-5 text-red-500" />}
-            {toast.type === 'info' && <Cloud className="w-5 h-5 text-blue-500" />}
+            {toast.type === 'info' && <Database className="w-5 h-5 text-blue-500" />}
             <span className="text-sm font-medium">{toast.message}</span>
           </div>
         )}

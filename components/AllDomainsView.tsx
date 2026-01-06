@@ -21,13 +21,7 @@ export const AllDomainsView: React.FC<AllDomainsViewProps> = ({
         <h2 className="text-2xl font-bold text-slate-800">File Manager</h2>
         <p className="text-slate-500 text-sm">View, edit, and manage all your stored domain lists.</p>
       </div>
-      
-      <DomainTable 
-        domains={domains} 
-        onRemove={onRemove} 
-        onUpdate={onUpdate}
-        onStatusChange={onStatusChange}
-      />
+      <DomainTable domains={domains} onRemove={onRemove} onUpdate={onUpdate} onStatusChange={onStatusChange} />
     </div>
   );
 };
